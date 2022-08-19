@@ -5,7 +5,7 @@
 <script>
 promise_test(async () => {
   const iframe = document.createElement("iframe");
-  const stream = await navigator.mediaDevices.getUserMedia({video: true});
+  const stream = await navigator.mediaDevices.getDisplayMedia({video: true});
   const track = stream.getVideoTracks()[0];
   const result = new Promise((resolve, reject) => {
     window.onmessage = (e) => {
