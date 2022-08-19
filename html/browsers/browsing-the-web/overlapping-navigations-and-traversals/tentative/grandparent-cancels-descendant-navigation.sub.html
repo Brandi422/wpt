@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<meta charset="utf-8">
+<title>Grandparent main frame cancels a navigation in a cross-origin grandchild</title>
+<script src="/resources/testharness.js"></script>
+<script src="/resources/testharnessreport.js"></script>
+
+<!--
+  This test asserts that an ancestor canceling a cross-origin descendant's
+  ongoing navigation does not result in load events firing in the ancestor
+  synchronously.
+
+  The reason this test uses a grandparent/grandchild pair to represent the
+  ancestor/descendant, instead of a parent/child pair, is because if a child
+  frame is blocking its parent window's load event, that means the child frame
+  navigation is being made from the initial about:blank Document to some
+  resource, and the initial about:blank child is synchronously scriptable from
+  the parent since they share the same window agent. This test is trying to
+  capture the scenario where the descendant document (that owns the ongoing
+  navigation) is hosted/scheduled on a different agent than the ancestor
+  document that cancels the descendant's ongoing navigation. The only way to do
+  this is to have a grandparent frame load a cross-origin child, whose document
+  itself loads a child frame that has a very slow ongoing navigation. That way
+  the grandparent can reach the grandchild via `window.frames[0].frames[0]`,
+  which is a proxy to the document living in a different agent.
+-->
+
+<body>
+
+<iframe src="http://{{domains[www1]}}:{{ports[http][0]}}/html/browsers/browsing-the-web/overlapping-navigations-and-traversals/tentative/resources/page-with-slow-childframe.html"></iframe>
+
+<script>
+promise_test(async t => {
+  let window_load_fired = false;
+  let iframe_load_fired = false;
+  let grandchild_iframe_load_fired = false;
+  const iframe = document.querySelector('iframe');
+
+  const iframe_onload_promise = new Promise(resolve => {
+    iframe.onload = function() {
+      iframe_load_fired = true;
+      resolve();
+    }
+  });
+
+  const window_load_promise = new Promise(resolve => {
+    window.onload = function() {
+      window_load_fired = true;
+      resolve();
+    }
+  });
+
+  const grandchild_iframe_load_fired_promise = new Promise(resolve => {
+    window.onmessage = e => {
+      grandchild_iframe_load_fired = true;
+      resolve(e.data);
+    }
+  });
+
+  // Let the grandchild frame get registered in window.frames.
+  await new Promise(resolve => {
+    t.step_timeout(resolve, 500);
+  });
+
+  // While the grandchild navigation is in-flight, cancel it and record when the
+  // our `load` event fires.
+  window.frames[0].frames[0].location.href = "resources/slow.py?different";
+
+  // Synchronously after cancelation, no load events should have been fired.
+  assert_false(window_load_fired,
+    "Grandparent's load event does not immediately fire after grandchild " +
+    "navigation cancelation");
+  assert_false(iframe_load_fired,
+    "<iframe> load event does not immediately fire after grandchild " +
+    "navigation cancelation");
+
+  // Load events did not fire in a microtask after cancelation.
+  await Promise.resolve();
+  assert_false(window_load_fired,
+      "Grandparent's load event does not fire in the microtask after " +
+      "grandchild navigation cancelation");
+  assert_false(iframe_load_fired,
+      "<iframe> load event does not fire in the microtask after grandchild " +
+      "navigation cancelation");
+
+  // Canceling the navigation should however, asynchronously unblock:
+  //   1.) Our child window's load event
+  //   2.) Our <iframe>'s load event (represent our child)
+  //   3.) Our window load event
+  // On the other hand, the grandchild navigation should still be ongoing, so in
+  // our immediate child window, the <iframe> representing our grandchild should
+  // not have had its load event fired yet.
+  await window_load_promise;
+  assert_true(window_load_fired,
+      "Grandparent's load event fires asynchronously after grandchild " +
+      "navigation cancelation");
+  assert_true(iframe_load_fired,
+      "<iframe> load event fires asynchronously after grandchild navigation " +
+      "cancelation");
+  assert_false(grandchild_iframe_load_fired,
+      "Grandchild <iframe> load event doesn't fire until its subsequent " +
+      "navigation is complete");
+
+  const message = await grandchild_iframe_load_fired_promise;
+  assert_equals(message, "grandchild completed");
+}, "grandparent cancels a pending navigation in a cross-origin grandchild");
+</script>

@@ -1,0 +1,17 @@
+<!DOCTYPE html>
+<meta charset="utf-8">
+<title>Page with child frame that navigates slowly</title>
+
+<!--
+  This file is used by `../grandparent-cancels-descendant-navigation.sub.html`.
+  The iframe below is its grandchild iframe, and whenever its load event fires
+  we report this up to our parent Document.
+-->
+<iframe src="slow.py"></iframe>
+
+<script>
+  const iframe = document.querySelector('iframe');
+  iframe.onload = e => {
+    window.parent.postMessage("grandchild completed", "*");
+  };
+</script>
