@@ -1,0 +1,69 @@
+<!doctype html>
+<script src="/resources/testharness.js"></script>
+<script src="/resources/testharnessreport.js"></script>
+<script src="/resources/testdriver.js"></script>
+<script src="/resources/testdriver-vendor.js"></script>
+<script src="/resources/testdriver-actions.js"></script>
+<head>
+<title>Drag and drop: dropping block element onto canvas</title>
+<style type="text/css">
+div
+  {width:20px;
+  height:20px;
+  background-color:green;}
+</style>
+<script type="application/ecmascript">
+function paint(color)
+  {var canvas = document.querySelector('canvas'),
+  c = canvas.getContext('2d');
+  c.fillStyle = color;
+  c.beginPath();
+  c.moveTo(0,0);
+  c.lineTo(100,0);
+  c.lineTo(100,100);
+  c.lineTo(0,100);
+  c.closePath();
+  c.fill();}
+function start(event)
+  {event.dataTransfer.effectAllowed = 'copy';
+  event.dataTransfer.setData('text/plain', 'green');}
+</script>
+</head>
+<body onload="paint('gray')">
+<div draggable="true" ondragstart="start(event)"/>
+<p>Drag green box above to the gray canvas below. Canvas should turn green when you drop green box on it.</p>
+<p>
+  <canvas width="100" height="100" ondragenter="event.preventDefault()" ondragover="return false" ondrop="paint(event.dataTransfer.getData('text/plain'))">Canvas</canvas>
+</p>
+</body>
+<script>
+  const mouseMoveToCenter = element => {
+  const clientRect = element.getBoundingClientRect();
+  const centerX = (clientRect.left + clientRect.right) / 2;
+  const centerY = (clientRect.top + clientRect.bottom) / 2;
+  return new test_driver.Actions()
+  .pointerMove(centerX, centerY)
+  .send()
+};
+
+promise_test((t) =>  new Promise(async (resolve, reject) => {
+  const div = document.querySelector('div');
+  const canvas = document.querySelector('canvas');
+  canvas.ondrop = t.step_func((event) => {
+    paint();
+    resolve();
+    let style = getComputedStyle(canvas);
+    let currentColor = "green";
+    assert_equals(style.getPropertyValue("background-colour"), currentColor);
+  })
+  await mouseMoveToCenter(canvas);
+  await new test_driver.Actions()
+  .pointerDown()
+  .send()
+  await mouseMoveToCenter(div);
+  await new test_driver.Actions()
+  .pointerUp()
+  .send()
+}, "Gray canvas should turn green when green box is dropped on it"))
+</script>
+</html>

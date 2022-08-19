@@ -1,5 +1,9 @@
-<?xml version="1.0" encoding="utf-8"?>
-<html xmlns="http://www.w3.org/1999/xhtml">
+<!doctype html>
+<script src="/resources/testharness.js"></script>
+<script src="/resources/testharnessreport.js"></script>
+<script src="/resources/testdriver.js"></script>
+<script src="/resources/testdriver-vendor.js"></script>
+<script src="/resources/testdriver-actions.js"></script>
 <head>
 <title>Canvas drag and drop carrying image as dataURL</title>
 <style type="text/css">
@@ -31,20 +35,45 @@ function start(event)
 <div
   ondragenter="event.preventDefault()"
   ondragover="return false"
-  ondrop="addImage(event)"
 />
 <script type="application/ecmascript">
-var canvas = document.querySelector('canvas'),
+const mouseMoveToCenter = element => {
+  const clientRect = element.getBoundingClientRect();
+  const centerX = (clientRect.left + clientRect.right) / 2;
+  const centerY = (clientRect.top + clientRect.bottom) / 2;
+  return new test_driver.Actions()
+  .pointerMove(centerX, centerY)
+  .send()
+};
+promise_test((t) => new Promise(async (resolve, reject) => {
+  const canvas = document.querySelector('canvas');
+  const div = document.querySelector('div');
+  div.ondrop = t.step_func((event) => {
+    addImage(event);
+    resolve();
+  })
 c = canvas.getContext('2d');
 for(var x = 0; x != 50; x++)
-  {c.fillStyle = (x%2 == 0)?'navy':'white';
+  {
+  c.fillStyle = (x%2 == 0)?'navy':'white';
   c.beginPath();
   c.moveTo(x,x);
   c.lineTo(100-x,x);
   c.lineTo(100-x,100-x);
   c.lineTo(x,100-x);
   c.closePath();
-  c.fill();}
+  c.fill();
+  }
+  await mouseMoveToCenter(canvas);
+  await new test_driver.Actions()
+  .pointerDown()
+  .send();
+  await mouseMoveToCenter(div);
+  await new test_driver.Actions()
+  .pointerUp()
+  .send();
+  }, "Canvas turns green when the green pattern is dropped on it."))
+
 </script>
 </body>
 </html>
