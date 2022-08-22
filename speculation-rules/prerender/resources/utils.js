@@ -288,3 +288,50 @@ function test_prerender_defer(fn, label) {
     await post;
   }, label);
 }
+
+// Starts prerendering a page from the given referrer RemoteContextWrapper. See
+// /html/browsers/browsing-the-web/remote-context-helper/resources/remote-context-helper.js
+function addPrerenderRC(referrerRemoteContext) {
+  return referrerRemoteContext.helper.createContext({
+    executorCreator(url) {
+      return referrerRemoteContext.executeScript(url => {
+        const script = document.createElement("script");
+        script.type = "speculationrules";
+        script.textContent = JSON.stringify({
+          prerender: [
+            {
+              source: "list",
+              urls: [url]
+            }
+          ]
+        });
+        document.head.append(script);
+      }, [url]);
+    }
+  });
+}
+
+// Activates a prerendered RemoteContextWrapper by navigating the referrer
+// RemoteContextWrapper to it. See
+// /html/browsers/browsing-the-web/remote-context-helper/resources/remote-context-helper.js
+async function activatePrerenderRC(referrerRC, prerenderedRC) {
+  // Store a promise that will fulfill when the prerenderingchange event fires.
+  await prerenderedRC.executeScript(() => {
+    window.activatedPromise = new Promise(resolve => {
+      document.addEventListener("prerenderingchange", () => resolve("activated"));
+    });
+  });
+
+  // Activate the prerendered page.
+  referrerRC.navigateTo(prerenderedRC);
+
+  // Wait until that event fires. If the activation fails and a normal
+  // navigation happens instead, then prerenderedRC will start pointing to that
+  // other page, where window.activatedPromise is undefined. In that case this
+  // assert will fail since undefined !== "activated".
+  assert_equals(
+    await prerenderedRC.executeScript(() => window.activatedPromise),
+    "activated",
+    "The prerendered page must be activated; instead a normal navigation happened."
+  );
+}
