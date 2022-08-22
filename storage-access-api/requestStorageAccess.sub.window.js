@@ -40,6 +40,17 @@ if (topLevelDocument) {
   // This specific test will run only as a top level test (not as a worker).
   // Specific requestStorageAccess() scenarios will be tested within the context
   // of various iFrames
+  promise_test(async t => {
+    let promise = RunRequestStorageAccessInDetachedFrame();
+    if (!promise) {
+      // The important point is that the call ought not resolve.
+      return Promise.reject().catch(() => { });
+    }
+    let description = "document.requestStorageAccess() call in a detached frame";
+    return promise.then(t.unreached_func("Should have rejected: " + description)).catch(function (e) {
+      assert_equals(undefined, e, description);
+    });
+  }, "[detached-frame] document.requestStorageAccess() should not resolve when run in a detached frame");
 
   // Create a test with a single-child same-origin iframe.
   RunTestsInIFrame("resources/requestStorageAccess-iframe.html?testCase=same-origin-frame&rootdocument=false");
@@ -66,5 +77,4 @@ if (topLevelDocument) {
 
     return access_promise;
   }, "[" + testPrefix + "] document.requestStorageAccess() should be resolved when called properly with a user gesture");
-
 }
