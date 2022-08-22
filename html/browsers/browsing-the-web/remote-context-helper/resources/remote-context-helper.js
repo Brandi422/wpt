@@ -93,18 +93,20 @@
    */
   class RemoteContextConfig {
     /**
-     * @param {string} origin A URL or a key in `get_host_info()`. @see finalizeOrigin for how origins are handled.
-     * @param {string[]} scripts  A list of script URLs. The current document
-     *     will be used as the base for relative URLs.
-     * @param {[string, string][]} headers  A list of pairs of name and value.
-     *     The executor will be served with these headers set.
-     * @param {string} startOn If supplied, the executor will start when this
-     *     event occurs, e.g. "pageshow",
-     *  (@see window.addEventListener). This only makes sense for window-based executors, not worker-based.
-     *
+     * @param {Object} [options]
+     * @param {string} [options.origin] A URL or a key in `get_host_info()`.
+     *                 @see finalizeOrigin for how origins are handled.
+     * @param {string[]} [options.scripts]  A list of script URLs. The current
+     *     document will be used as the base for relative URLs.
+     * @param {[string, string][]} [options.headers]  A list of pairs of name
+     *     and value. The executor will be served with these headers set.
+     * @param {string} [options.startOn] If supplied, the executor will start
+     *     when this event occurs, e.g. "pageshow",
+     *     (@see window.addEventListener). This only makes sense for
+     *     window-based executors, not worker-based.
      */
     constructor(
-        {origin = null, scripts = [], headers = [], startOn = null} = {}) {
+        {origin, scripts = [], headers = [], startOn} = {}) {
       this.origin = origin;
       this.scripts = scripts;
       this.headers = headers;
@@ -115,7 +117,7 @@
      * If `config` is not already a `RemoteContextConfig`, one is constructed
      * using `config`.
      * @private
-     * @param {object} config
+     * @param {object} [config]
      * @returns
      */
     static ensure(config) {
@@ -138,16 +140,16 @@
         origin = extraConfig.origin;
       }
       let startOn = this.startOn;
-      if (extraConfig.startOn !== null) {
+      if (extraConfig.startOn) {
         startOn = extraConfig.startOn;
       }
       const headers = this.headers.concat(extraConfig.headers);
       const scripts = this.scripts.concat(extraConfig.scripts);
       return new RemoteContextConfig({
-        origin: origin,
-        headers: headers,
-        scripts: scripts,
-        startOn: startOn,
+        origin,
+        headers,
+        scripts,
+        startOn,
       });
     }
   }
@@ -169,7 +171,7 @@
      * @param {RemoteContextConfig|object} config The configuration
      *     for this remote context.
      */
-    constructor(config = null) {
+    constructor(config) {
       this.config = RemoteContextConfig.ensure(config);
     }
 
@@ -177,17 +179,19 @@
      * Creates a new remote context and returns a `RemoteContextWrapper` giving
      * access to it.
      * @private
-     * @param {(url: string) => RemoteContext} executorCreator A function that
-     *     takes a URL and returns a context, e.g. an iframe or window.
-     * @param {RemoteContextConfig|object|null} extraConfig If
-     *     supplied, extra configuration for this remote context to be merged
-     * with `this`'s existing config. If it's not a `RemoteContextConfig`, it
-     * will be used to construct a new one.
+     * @param {Object} options
+     * @param {(url: string) => Promise<undefined>} options.executorCreator A
+     *     function that takes a URL and causes the browser to navigate some
+     *     window to that URL, e.g. via an iframe or a new window.
+     * @param {RemoteContextConfig|object} [options.extraConfig] If supplied,
+     *     extra configuration for this remote context to be merged with
+     *     `this`'s existing config. If it's not a `RemoteContextConfig`, it
+     *     will be used to construct a new one.
      * @returns {RemoteContextWrapper}
      */
     async createContext({
-      executorCreator: executorCreator,
-      extraConfig = null,
+      executorCreator,
+      extraConfig,
       isWorker = false,
     }) {
       const config =
@@ -212,27 +216,25 @@
         url.searchParams.append('startOn', config.startOn);
       }
 
-      executorCreator(url);
-      return new RemoteContextWrapper(new RemoteContext(uuid), this);
+      await executorCreator(url.href);
+      return new RemoteContextWrapper(new RemoteContext(uuid), this, url.href);
     }
 
     /**
      * Creates a window with a remote context. @see createContext for
-     * @param {RemoteContextConfig|object} extraConfig Will be
+     * @param {RemoteContextConfig|object} [extraConfig] Will be
      *     merged with `this`'s config.
-     * @param {string} options.target Passed to `window.open` as the 2nd
-     *     argument
-     * @param {string} options.features Passed to `window.open` as the 3rd
-     *     argument
+     * @param {Object} [options]
+     * @param {string} [options.target] Passed to `window.open` as the
+     *     2nd argument
+     * @param {string} [options.features] Passed to `window.open` as the
+     *     3rd argument
      * @returns {RemoteContextWrapper}
      */
-    addWindow(extraConfig = null, options = {
-      target: null,
-      features: null,
-    }) {
+    addWindow(extraConfig, options) {
       return this.createContext({
         executorCreator: windowExecutorCreator(options),
-        extraConfig: extraConfig,
+        extraConfig,
       });
     }
   }
@@ -256,10 +258,7 @@
     url.searchParams.append('pipe', formattedHeaders.join('|'));
   }
 
-  function windowExecutorCreator({target, features}) {
-    if (!target) {
-      target = '_blank';
-    }
+  function windowExecutorCreator({target = '_blank', features} = {}) {
     return url => {
       window.open(url, target, features);
     };
@@ -306,9 +305,10 @@
      * This should only be constructed by `RemoteContextHelper`.
      * @private
      */
-    constructor(context, helper) {
+    constructor(context, helper, url) {
       this.context = context;
       this.helper = helper;
+      this.url = url;
     }
 
     /**
@@ -350,28 +350,28 @@
 
     /**
      * Adds an iframe to the current document.
-     * @param {RemoteContextConfig} extraConfig
-     * @param {[string, string][]} options.attributes A list of pairs of strings
+     * @param {RemoteContextConfig} [extraConfig]
+     * @param {[string, string][]} [attributes] A list of pairs of strings
      *     of attribute name and value these will be set on the iframe element
      *     when added to the document.
      * @returns {RemoteContextWrapper} The remote context.
      */
-    addIframe(extraConfig = null, attributes = {}) {
+    addIframe(extraConfig, attributes = {}) {
       return this.helper.createContext({
         executorCreator: elementExecutorCreator(this, 'iframe', attributes),
-        extraConfig: extraConfig,
+        extraConfig,
       });
     }
 
     /**
      * Adds a dedicated worker to the current document.
-     * @param {RemoteContextConfig} extraConfig
+     * @param {RemoteContextConfig} [extraConfig]
      * @returns {RemoteContextWrapper} The remote context.
      */
-    addWorker(extraConfig = null) {
+    addWorker(extraConfig) {
       return this.helper.createContext({
         executorCreator: workerExecutorCreator(),
-        extraConfig: extraConfig,
+        extraConfig,
         isWorker: true,
       });
     }
@@ -411,11 +411,30 @@
     }
 
     /**
+     * Navigates to the given URL or other `RemoteContextWrapper`, by
+     * executing a script in the remote context that will perform
+     * navigation with the `location.href` setter. @see navigate for
+     * more, including the requirement to sometimes use
+     * `waitUntilLocationIs`.
+     *
+     * @param {RemoteContextWrapper|string|URL|Object} url The URL or
+     *     `RemoteContextWrapper` to navigate to. Also works with any
+     *     object with a `url` property.
+     */
+    navigateTo(destination) {
+      const url = destination.url ?? destination.toString();
+
+      this.navigate(url => {
+        location.href = url;
+      }, [url]);
+    }
+
+    /**
      * Navigates the context to a new document running an executor.
-     * @param {RemoteContextConfig} extraConfig
+     * @param {RemoteContextConfig} [extraConfig]
      * @returns {RemoteContextWrapper} The remote context.
      */
-    async navigateToNew(extraConfig = null) {
+    async navigateToNew(extraConfig) {
       return this.helper.createContext({
         executorCreator: navigateExecutorCreator(this),
         extraConfig: extraConfig,
@@ -455,10 +474,10 @@
     /**
      * Performs a history traversal.
      * @param {integer} n How many steps to traverse. @see history.go
-     * @param {string} expectedLocation If supplied will be passed to @see waitUntilLocationIs.
+     * @param {string} [expectedLocation] If supplied will be passed to @see waitUntilLocationIs.
      * @returns The return value of `waitUntilLocationIs` or nothing.
      */
-    async historyGo(n, expectedLocation = null) {
+    async historyGo(n, expectedLocation) {
       this.navigate((n) => {
         history.go(n);
       }, [n]);
@@ -469,10 +488,10 @@
 
     /**
      * Performs a history traversal back.
-     * @param {string} expectedLocation If supplied will be passed to @see waitUntilLocationIs.
+     * @param {string} [expectedLocation] If supplied will be passed to @see waitUntilLocationIs.
      * @returns The return value of `waitUntilLocationIs` or nothing.
      */
-    async historyBack(expectedLocation = null) {
+    async historyBack(expectedLocation) {
       this.navigate(() => {
         history.back();
       });
@@ -483,10 +502,10 @@
 
     /**
      * Performs a history traversal back.
-     * @param {string} expectedLocation If supplied will be passed to @see waitUntilLocationIs.
+     * @param {string} [expectedLocation] If supplied will be passed to @see waitUntilLocationIs.
      * @returns The return value of `waitUntilLocationIs` or nothing.
      */
-    async historyForward(expectedLocation = null) {
+    async historyForward(expectedLocation) {
       this.navigate(() => {
         history.forward();
       });
